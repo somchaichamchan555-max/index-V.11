@@ -84,6 +84,8 @@ input[type=number]{width:76px;text-align:right;font-variant-numeric:tabular-nums
 input:focus,select:focus{outline:none;border-color:var(--accent);}
 .live{color:var(--ink);font-weight:600;font-family:var(--mono);}
 .daybadge{font-family:var(--mono);font-size:10.5px;font-weight:600;margin-left:4px;}
+.usdt-val{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px;}
+.coinsel{font-size:16px;padding:2px 4px;}
 .daybadge.pos{color:var(--up);}.daybadge.neg{color:var(--down);}
 
 .add{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin:6px 0 18px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
@@ -320,7 +322,7 @@ input:focus,select:focus{outline:none;border-color:var(--accent);}
     </div>
     <div style="width:100%;margin-top:6px;">
       <button id="diag_btn">🩺 ทดสอบการดึงราคา</button>
-      <span style="font-size:11px;color:var(--muted);margin-left:8px;">ไฟล์เวอร์ชัน v10</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:8px;">ไฟล์เวอร์ชัน v10.1 (USDT)</span>
       <div id="diag_out" style="font-size:12px;font-family:monospace;color:var(--muted);margin-top:6px;line-height:1.7;"></div>
     </div>
   </div>
@@ -330,7 +332,8 @@ input:focus,select:focus{outline:none;border-color:var(--accent);}
 <script>
 /* ── CONSTANTS ── */
 const KEY='myport_v2', SNAP_KEY='myport_snaps_v1', ALERT_KEY='myport_alerts_v1', DIV_KEY='myport_divs_v1', TRADE_KEY='myport_trades_v1';
-const COINS={BTC:'bitcoin',ETH:'ethereum',ADA:'cardano',BNB:'binancecoin',SOL:'solana',XRP:'ripple',DOGE:'dogecoin',USDT:'tether',DOT:'polkadot',TRX:'tron'};
+const COINS={BTC:'bitcoin',ETH:'ethereum',ADA:'cardano',BNB:'binancecoin',SOL:'solana',XRP:'ripple',DOGE:'dogecoin',USDT:'tether',DOT:'polkadot',TRX:'tron',SUI:'sui',AVAX:'avalanche-2',LINK:'chainlink',TON:'the-open-network',NEAR:'near',APT:'aptos',ARB:'arbitrum',OP:'optimism'};
+const COIN_SYM=Object.fromEntries(Object.entries(COINS).map(([k,v])=>[v,k]));
 const CLASSES=['คริปโต','หุ้นไทย','หุ้นสหรัฐ','กองทุน','เงินสด'];
 const CMAP={'คริปโต':'#6C8CFF','หุ้นไทย':'#2ECF95','หุ้นสหรัฐ':'#F5B840','กองทุน':'#B18BFF','เงินสด':'#93A0B4'};
 
@@ -338,6 +341,7 @@ const DEFAULTS=[]; // เทมเพลตเปล่า — ไม่มี�
 
 /* ── STATE ── */
 let fx=33.31, cryptoTHB={bitcoin:1966265,ethereum:52760,cardano:5.03};
+let cryptoUSDT={}, usdtUSD=1; // ราคาเหรียญหน่วย USDT (สด) และ 1 USDT = ? USD
 let stockPricesUSD={CRWD:767.40,PWR:703.39,NVDA:194.38};
 let stockPricesTHB={'BANPU.BK':5.40,'BH.BK':188,'MINT.BK':24.40,'BDMS.BK':19.30};
 let holdings=load(), chartInst=null, currentTab='alloc';
@@ -412,8 +416,14 @@ function showBanner(a){
 /* ── HELPERS ── */
 const baht=n=>'฿'+Math.round(n).toLocaleString('en-US');
 const dol=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+/* ราคาเหรียญ: ใช้ USDT เป็นหลัก แปลงเป็นบาทด้วย USD/THB (1 USDT = usdtUSD USD) — ไม่มีราคา USDT ค่อยใช้ราคาบาทสำรอง */
+function coinTHB(id){return cryptoUSDT[id]?cryptoUSDT[id]*usdtUSD*fx:(cryptoTHB[id]||0);}
+function coinUSDT(id){return cryptoUSDT[id]||(cryptoTHB[id]?cryptoTHB[id]/fx/usdtUSD:0);}
+function fmtUSDT(n){if(!n)return'—';const d=n>=1000?2:n>=1?4:n>=0.01?6:8;return n.toLocaleString('en-US',{minimumFractionDigits:Math.min(d,2),maximumFractionDigits:d});}
+function valueUSDT(h){return coinUSDT(h.id)*(h.qty||0);}
+const fmt2=n=>(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 function valueTHB(h){
-  if(h.kind==='crypto')return(cryptoTHB[h.id]||0)*(h.qty||0);
+  if(h.kind==='crypto')return coinTHB(h.id)*(h.qty||0);
   if(h.kind==='qty_usd')return(h.qty||0)*(h.price_usd||0)*fx;
   if(h.kind==='qty')return(h.qty||0)*(h.price||0);
   if(h.kind==='usd')return(h.usd||0)*fx;
@@ -425,6 +435,10 @@ function pnlOf(h){
   return{v,p,pct};
 }
 function pnlHtml(h){
+  if(h.kind==='crypto'&&h.cost_usd>0){
+    const v=valueUSDT(h),p=v-h.cost_usd,pct=p/h.cost_usd*100,s=p>=0?'+':'',c=p>=0?'pos':'neg';
+    return`<div class="pnl ${c}">${p<0?'−':'+'}${Math.abs(p).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} USDT (${s}${pct.toFixed(1)}%)</div>`;
+  }
   const r=pnlOf(h);
   if(!r)return '<div class="pnl hint">กรอกต้นทุน</div>';
   const s=r.p>=0?'+':'',c=r.p>=0?'pos':'neg';
@@ -442,7 +456,7 @@ function buildGroups(){
     items.forEach(([h,i])=>{
       let mid='';
       if(h.kind==='crypto')
-        mid=`<input type="number" step="any" value="${h.qty}" oninput="setF(${i},'qty',this.value)"> × <span class="live" data-price="${h.id}">${baht(cryptoTHB[h.id]||0)}</span><span class="daybadge" data-dayc="${h.id}"></span>`;
+        mid=`<select class="coinsel" onchange="setCoin(${i},this.value)">${coinOptions(h.id)}</select> <input type="number" step="any" inputmode="decimal" value="${h.qty}" oninput="setF(${i},'qty',this.value)"> × <span class="live" data-price="${h.id}">${fmtUSDT(coinUSDT(h.id))}</span> USDT<span class="daybadge" data-dayc="${h.id}"></span><div class="usdt-val" data-usdt-val="${i}">= ${fmt2(valueUSDT(h))} USDT</div>`;
       else if(h.kind==='qty_usd')
         mid=`<input type="number" step="any" value="${h.qty}" oninput="setF(${i},'qty',this.value)"> × <span class="live" data-us-ticker="${h.ticker}">$${(h.price_usd||0).toFixed(2)}</span><span class="daybadge" data-day="${h.ticker}"></span>`;
       else if(h.kind==='qty'&&h.ticker)
@@ -456,7 +470,7 @@ function buildGroups(){
 
       const isUSD=h.kind==='crypto'||h.kind==='qty_usd';
       if(isUSD){
-        mid+=`<div class="cost-wrap">ต้นทุน:<input type="number" step="any" value="${h.cost_usd||''}" placeholder="$" oninput="setCostUSD(${i},this.value)">$<span class="cost-conv" data-cost-conv="${i}">${h.cost_thb>0?'≈'+baht(h.cost_thb):''}</span></div>`;
+        mid+=`<div class="cost-wrap">ต้นทุน:<input type="number" step="any" inputmode="decimal" value="${h.cost_usd||''}" placeholder="$" oninput="setCostUSD(${i},this.value)">${h.kind==='crypto'?'USDT':'$'}<span class="cost-conv" data-cost-conv="${i}">${h.cost_thb>0?'≈'+baht(h.cost_thb):''}</span></div>`;
       } else {
         mid+=`<div class="cost-wrap">ต้นทุน:<input type="number" step="any" value="${h.cost_thb||''}" placeholder="฿" oninput="setCost(${i},this.value)">฿</div>`;
       }
@@ -477,6 +491,12 @@ function buildGroups(){
   populateSell();populateDivSel();buildDivs();
 }
 function setF(i,k,v){holdings[i][k]=parseFloat(v)||0;recompute();save();}
+function coinOptions(id){
+  const opts=Object.entries(COINS).map(([s,v])=>`<option value="${v}"${v===id?' selected':''}>${s}</option>`);
+  if(id&&!COIN_SYM[id])opts.unshift(`<option value="${id}" selected>${id}</option>`);
+  return opts.join('');
+}
+function setCoin(i,id){holdings[i].id=id;buildGroups();recompute();save();fetchLive();}
 function setCost(i,v){holdings[i].cost_thb=parseFloat(v)||0;recompute();save();buildDivs();}
 function setCostUSD(i,v){
   const usd=parseFloat(v)||0;
@@ -510,7 +530,7 @@ function sellItem(){
   const raw=parseFloat(document.getElementById('s_amt').value),all=isNaN(raw)||raw<=0;
   let proceeds=0,emptied=false,nm=h.sym,soldStr='',frac=0;
   const costBefore=h.cost_thb||0;
-  if(h.kind==='crypto'){const p=cryptoTHB[h.id]||0,tot=h.qty,u=all?tot:Math.min(raw,tot);proceeds=u*p;frac=tot>0?u/tot:0;h.qty-=u;soldStr=(+u.toFixed(8))+' เหรียญ';if(h.qty<=1e-9)emptied=true;}
+  if(h.kind==='crypto'){const p=coinTHB(h.id),tot=h.qty,u=all?tot:Math.min(raw,tot);proceeds=u*p;frac=tot>0?u/tot:0;h.qty-=u;if(h.cost_usd)h.cost_usd=+(h.cost_usd*(1-frac)).toFixed(2);soldStr=(+u.toFixed(8))+' เหรียญ';if(h.qty<=1e-9)emptied=true;}
   else if(h.kind==='qty'){const tot=h.qty,u=all?tot:Math.min(raw,tot);proceeds=u*(h.price||0);frac=tot>0?u/tot:0;h.qty-=u;soldStr=(+u.toFixed(4))+' หุ้น';if(h.qty<=1e-9)emptied=true;}
   else if(h.kind==='qty_usd'){const tot=h.qty,u=all?tot:Math.min(raw,tot);proceeds=u*(h.price_usd||0)*fx;frac=tot>0?u/tot:0;h.qty=+(h.qty-u).toFixed(7);soldStr=(+u.toFixed(7))+' หุ้น';if(h.cost_usd)h.cost_usd=+(h.cost_usd*(1-frac)).toFixed(2);if(h.qty<=1e-9)emptied=true;}
   else if(h.kind==='thb'){const tot=h.thb,a=all?tot:Math.min(raw,tot);proceeds=a;frac=tot>0?a/tot:0;h.thb-=a;soldStr=baht(a);if(h.thb<=0.005)emptied=true;}
@@ -561,7 +581,8 @@ function recompute(){
     tp.innerHTML=`P&L รวม: <span style="color:${c};font-weight:600;">${s}${baht(totalPnl)} (${s}${pct.toFixed(1)}%)</span>`;
   } else if(tp) tp.innerHTML='';
   CLASSES.forEach(c=>{const el=document.querySelector(`[data-sub="${c}"]`);if(el)el.textContent=baht(byClass[c]||0);});
-  document.querySelectorAll('[data-price]').forEach(el=>el.textContent=baht(cryptoTHB[el.dataset.price]||0));
+  document.querySelectorAll('[data-price]').forEach(el=>el.textContent=fmtUSDT(coinUSDT(el.dataset.price)));
+  document.querySelectorAll('[data-usdt-val]').forEach(el=>{const h=holdings[+el.dataset.usdtVal];if(h)el.textContent='= '+fmt2(valueUSDT(h))+' USDT';});
   document.querySelectorAll('[data-us-ticker]').forEach(el=>{const h=holdings.find(x=>x.ticker===el.dataset.usTicker);if(h)el.textContent='$'+(h.price_usd||0).toFixed(2);});
   document.querySelectorAll('[data-th-ticker]').forEach(el=>{const h=holdings.find(x=>x.ticker===el.dataset.thTicker);if(h)el.textContent='฿'+(h.price||0).toFixed(2);});
   document.querySelectorAll('[data-day]').forEach(el=>{const dp=dayPct[el.dataset.day];el.innerHTML=typeof dp==='number'?fmtDay(dp):'';});
@@ -581,8 +602,8 @@ function buildTape(){
   holdings.forEach(h=>{
     if(h.kind==='crypto'&&h.id){
       if(seen.has(h.id))return;seen.add(h.id);
-      const p=cryptoTHB[h.id];if(!p)return;
-      chips.push({s:h.sym,p:baht(p),dp:dayPct[h.id]});
+      const p=coinUSDT(h.id);if(!p)return;
+      chips.push({s:COIN_SYM[h.id]||h.sym,p:fmtUSDT(p)+' USDT',dp:dayPct[h.id]});
     } else if(h.ticker){
       if(seen.has(h.ticker))return;seen.add(h.ticker);
       const th=h.ticker.endsWith('.BK');
@@ -905,8 +926,15 @@ async function fetchLive(){
   let cryptoOk=false;
   const ids=[...new Set(holdings.filter(h=>h.kind==='crypto'&&h.id).map(h=>h.id))];
   try{
-    if(ids.length){const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+ids.join(',')+'&vs_currencies=thb&include_24hr_change=true',{cache:'no-store'});
-      if(r.ok){const d=await r.json();ids.forEach(id=>{if(d[id]?.thb){cryptoTHB[id]=d[id].thb;if(typeof d[id].thb_24h_change==='number')dayPct[id]=d[id].thb_24h_change;}});cryptoOk=true;}}
+    if(ids.length){const q=[...new Set([...ids,'tether'])];
+      const r=await fetch('https://api.coingecko.com/api/v3/simple/price?ids='+q.join(',')+'&vs_currencies=usd,thb&include_24hr_change=true',{cache:'no-store'});
+      if(r.ok){const d=await r.json();
+        if(d.tether?.usd>0)usdtUSD=d.tether.usd;
+        ids.forEach(id=>{const x=d[id];if(!x)return;
+          if(x.thb)cryptoTHB[id]=x.thb;
+          if(x.usd)cryptoUSDT[id]=id==='tether'?1:x.usd/usdtUSD;
+          if(typeof x.usd_24h_change==='number')dayPct[id]=id==='tether'?0:x.usd_24h_change;});
+        cryptoOk=true;}}
     else cryptoOk=true;
   }catch(e){}
   try{const r=await fetch('https://open.er-api.com/v6/latest/USD',{cache:'no-store'});if(r.ok){const d=await r.json();if(d?.rates?.THB)fx=d.rates.THB;}}catch(e){}
@@ -1032,7 +1060,9 @@ function exportPortfolio(){
   const TVMAP_SYM={
     bitcoin:'BINANCE:BTCUSDT.P',ethereum:'BINANCE:ETHUSDT',cardano:'BINANCE:ADAUSDT',
     binancecoin:'BINANCE:BNBUSDT',solana:'BINANCE:SOLUSDT',ripple:'BINANCE:XRPUSDT',
-    dogecoin:'BINANCE:DOGEUSDT',tether:null,polkadot:'BINANCE:DOTUSDT',tron:'BINANCE:TRXUSDT'
+    dogecoin:'BINANCE:DOGEUSDT',tether:null,polkadot:'BINANCE:DOTUSDT',tron:'BINANCE:TRXUSDT',
+    sui:'BINANCE:SUIUSDT','avalanche-2':'BINANCE:AVAXUSDT',chainlink:'BINANCE:LINKUSDT','the-open-network':'BINANCE:TONUSDT',
+    near:'BINANCE:NEARUSDT',aptos:'BINANCE:APTUSDT',arbitrum:'BINANCE:ARBUSDT',optimism:'BINANCE:OPUSDT'
   };
   const CLS_PREFIX={'หุ้นไทย':'SET:','หุ้นสหรัฐ':null,'กองทุน':null,'เงินสด':null};
   const US_EXCHANGE={CRWD:'NASDAQ:CRWD',PWR:'NYSE:PWR',NVDA:'NASDAQ:NVDA',AAPL:'NASDAQ:AAPL',GOOGL:'NASDAQ:GOOGL',AMAT:'NASDAQ:AMAT',MSFT:'NASDAQ:MSFT',AMZN:'NASDAQ:AMZN'};
@@ -1045,6 +1075,7 @@ function exportPortfolio(){
     const pnl=pnlOf(h);
     return{sym:h.sym,cls:h.cls,kind:h.kind,qty:h.qty,price:h.price,thb:h.thb,usd:h.usd,
       id:h.id,sub:h.sub,cost_thb:h.cost_thb,value_thb:val,
+      cost_usd:h.cost_usd??null,value_usdt:h.kind==='crypto'?valueUSDT(h):null,
       pnl_thb:pnl?pnl.p:null,pnl_pct:pnl?pnl.pct:null,tv_symbol:tv};
   });
   const byClass={};holdings.forEach(h=>byClass[h.cls]=(byClass[h.cls]||0)+valueTHB(h));
@@ -1053,6 +1084,7 @@ function exportPortfolio(){
     exported_date:new Date().toISOString().slice(0,10),
     total_thb:lastTotal,total_usd:lastTotal/fx,fx_usdthb:fx,
     crypto_prices_thb:{...cryptoTHB},
+    crypto_prices_usdt:{...cryptoUSDT},
     by_class:byClass,
     holdings:rows
   };
